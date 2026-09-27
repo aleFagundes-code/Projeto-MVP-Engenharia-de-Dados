@@ -1,0 +1,96 @@
+from pyspark.sql import functions as F, Row
+import datetime
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType, DoubleType, LongType, IntegerType, BooleanType
+from pyspark.sql.window import Window
+
+TARGET_TABLE           = "gold_layer_data_engine.gold_layer_database.tb_wave_data"
+BEACH_TABLE            = "silver_layer_cleaning_data_engine.silver_layer_database.tb_beaches"
+SCALED_WAVE_DATA           = "gold_layer_data_engine.gold_layer_database.tb_wave_data_scaled"
+AVG_WAVE_DATA           = "gold_layer_data_engine.gold_layer_database.tb_lower_avg_wave_height"
+
+df_wave = (
+    spark.table(TARGET_TABLE)
+    .filter(F.col("Aproved") == 1)
+    .orderBy("Beach_ID", "Forecast_Date")
+)
+df_beach = (spark.table(BEACH_TABLE))
+
+df_wave_beach = df_wave.join(df_beach, on="Beach_ID", how="inner").drop(df_beach.beach_id).drop(df_beach.file_id).drop(df_beach.source_file).drop(df_beach.timezone).drop(df_beach.timezone_abbreviation).drop(df_beach.utc_offset_seconds)
+
+DOUGLAS_SCALE = {
+    "Calmo":    {"min": 0,  "max": 0},
+    "Encrespado":    {"min": 0,  "max": 0.1},
+    "Suave ":    {"min": 0.1,  "max": 0.5},
+    "Fraco":    {"min": 0.5,  "max": 1.25},
+    "Moderado":    {"min": 1.25,  "max": 2.5},
+    "Grosso":    {"min": 2.5,  "max": 4.0},
+    "Muito Grosso":    {"min": 4.0,  "max": 6.0},
+    "Alto":    {"min": 6.0,  "max": 9.0},
+    "Muito Alto":    {"min": 9.0,  "max": 14.0},
+    "Fenomenal":    {"min": 15.0,  "max": 15.0},
+}
+
+
+
+def get_wave_scale(wave_height):
+    for key, value in DOUGLAS_SCALE.items():
+        if value["min"] <= wave_height <= value["max"]:
+            return key
+    return "Unknown"
+
+"""Salva a tabela com os dados de onda aprovados e com a escala de Douglas"""
+df_wave_beach = df_wave_beach.withColumn("Wave_Scale", F.udf(get_wave_scale, returnType=StringType())(F.col("Wave_Height")))
+
+df_wave_beach.write.mode("overwrite").saveAsTable(SCALED_WAVE_DATA)
+
+
+
+df_wave_beach = df_wave_beach.withColumn("Forecast_Date", F.to_timestamp(F.col("Forecast_Date")))
+DATA_INICIO = "2026-09-26"
+DATA_FIM    = "2026-09-29"
+
+df_gold = (
+    df_wave_beach
+    .filter(F.col("Forecast_Date").between(DATA_INICIO, DATA_FIM))
+)
+
+df_com_dia = df_gold.withColumn("Dia", F.to_date("Forecast_Date"))
+
+df_media = (
+    df_com_dia
+    .groupBy("Dia", "Beach_ID")
+    .agg(F.avg("Wave_Height").alias("Media_Altura"))
+)
+
+w = Window.partitionBy("Dia").orderBy("Media_Altura")
+
+df_menor_por_dia = (
+    df_media
+    .withColumn("rank", F.row_number().over(w))
+    .filter(F.col("rank") == 1)
+    .drop("rank")
+)
+
+dict_result = []
+
+df_menor_altura = df_menor_por_dia.orderBy("Media_Altura")
+
+for row in df_menor_por_dia.collect():
+    beach_name = df_beach.filter(F.col("beach_id") == row["Beach_ID"]).select("beach_name").collect()[0][0]
+    scale = get_wave_scale(row["Media_Altura"])
+    dict_result.append({
+        "Beach_Name": beach_name,
+        "Dia": row["Dia"],
+        "Ondas":scale
+    })
+    
+
+df_result = spark.createDataFrame(dict_result)
+df_result = df_result.withColumn("Dia", F.to_date(F.col("Dia")))
+df_result = df_result.withColumn("Dia", F.date_format(F.col("Dia"), "dd/MM/yyyy"))
+
+"""Salva a tabela com qual praia tem a menor onda por dia"""
+df_result.write.mode("overwrite").saveAsTable(AVG_WAVE_DATA)
+
+
+
