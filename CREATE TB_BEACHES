@@ -1,0 +1,44 @@
+from pyspark.sql.functions import regexp_replace
+from pyspark.sql.functions import col
+
+LOCATIONS_TABLE = "bronze_layer_reading_data_engine.bronze_layer_database.tb_locations"
+TARGET_TABLE = "silver_layer_cleaning_data_engine.silver_layer_database.tb_beaches"
+
+dictnames = {
+    1: 'Manguinhos',
+    2: 'Praia da Costa',
+    3: 'Camburi',
+    4: 'Carapebus',
+    5: 'Jacaraípe',
+    6: 'Bicanga',
+    7: 'Nova Almeida',
+    8:'Guarapari',
+    9:'Itaparíca'
+}
+
+df = (
+    spark.table(LOCATIONS_TABLE)
+)
+
+@dlt.table(
+    name="tb_beaches",
+    comment="Lista de Praias"
+)
+def tb_beaches():
+    id = df.agg({"location_id": "max"}).collect()[0][0] + 1
+    index = 0
+    dictbeaches = []
+    for row in df.collect():
+        if(row['source_file'] == 'open-meteo-20.21S40.21W19m.csv'):
+            beach_id = row['location_id'] + 1
+            name = dictnames[beach_id]
+            dictbeaches.append({'beach_id': beach_id, 'beach_name': name, 'latitude': row['latitude'], 'longitude': row['longitude'], 'elevation_m': row['elevation_m'], 'utc_offset_seconds': row['utc_offset_seconds'], 'timezone': row['timezone'], 'timezone_abbreviation': row['timezone_abbreviation'], 'file_id': row['location_id'], 'source_file': row['source_file']})
+        if(row['source_file'] == 'open-meteo-20.21S40.21W28m.csv'):
+            id += 1
+            beach_id = id 
+            name = dictnames[beach_id]
+            dictbeaches.append({'beach_id': beach_id, 'beach_name': name, 'latitude': row['latitude'], 'longitude': row['longitude'], 'elevation_m': row['elevation_m'], 'utc_offset_seconds': row['utc_offset_seconds'], 'timezone': row['timezone'], 'timezone_abbreviation': row['timezone_abbreviation'], 'file_id': row['location_id'], 'source_file': row['source_file']})
+
+
+    return spark.createDataFrame(dictbeaches)
+
