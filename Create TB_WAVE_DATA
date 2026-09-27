@@ -1,0 +1,36 @@
+RAW_TABLE = "bronze_layer_reading_data_engine.bronze_layer_database.tb_wave_raw_data"
+BEACH_TABLE = "silver_layer_cleaning_data_engine.silver_layer_database.tb_beaches"
+TARGET_TABLE = "silver_layer_cleaning_data_engine.silver_layer_database.tb_wave_data"
+
+from pyspark.sql.functions import regexp_replace
+from pyspark.sql.functions import col
+from pyspark.sql.window import Window
+from pyspark.sql.functions import row_number
+
+
+dfBeach = (
+    spark.table(BEACH_TABLE)
+)
+dfRawWave = (
+    spark.table(RAW_TABLE)
+)
+
+dfUniqueId = dfRawWave.select('location_id', 'source_file').distinct()
+dfBeachIdLocationId = dfBeach.select('beach_id', 'file_id', 'source_file').distinct()
+dfBeachIdLocationId = dfBeachIdLocationId.join(dfUniqueId, dfBeachIdLocationId.file_id == dfUniqueId.location_id, 'inner').where(dfUniqueId.source_file == dfBeachIdLocationId.source_file).drop(dfUniqueId.location_id).drop(dfBeachIdLocationId.source_file)
+dictWave = []
+dfWaveData = dfRawWave.join(dfBeachIdLocationId, (dfBeachIdLocationId.file_id == dfRawWave.location_id) & (dfRawWave.source_file == dfBeachIdLocationId.source_file), 'inner').drop(dfBeachIdLocationId.source_file).drop(dfBeachIdLocationId.file_id)
+
+# Define a window specification
+window_spec = Window.orderBy('time')
+# Add a strictly sequential ID column
+df_with_seq_id = dfWaveData.withColumn("wave_id", row_number().over(window_spec))
+
+dfColumnRename = df_with_seq_id.withColumnRenamed("time", 'Forecast_Date').withColumnRenamed("wave_height_m", 'Wave_Height').withColumnRenamed("wave_direction_deg", 'Wave_Direction').withColumnRenamed("wave_period_s", 'Wave_Period').withColumnRenamed("wave_peak_period", 'Wave_Peak_Period').withColumnRenamed("source_file", 'Source_File').withColumnRenamed("beach_id", 'Beach_ID').withColumnRenamed("location_id", 'File_ID').withColumnRenamed("wave_id", 'Wave_ID')
+
+dfTypeCast = dfColumnRename.withColumn("Wave_Height", dfColumnRename["Wave_Height"].cast("double")).withColumn("Wave_Direction", dfColumnRename["Wave_Direction"].cast("double")).withColumn("Wave_Period", dfColumnRename["Wave_Period"].cast("double")).withColumn("Wave_Peak_Period", dfColumnRename["Wave_Peak_Period"].cast("double")).withColumn("Source_File", dfColumnRename["Source_File"].cast("string")).withColumn("Beach_ID", dfColumnRename["Beach_ID"].cast("long")).withColumn("File_ID", dfColumnRename["File_ID"].cast("long")).withColumn("Wave_ID", dfColumnRename["Wave_ID"].cast("long")).withColumn('Forecast_Date', dfColumnRename.Forecast_Date.cast("timestamp"))
+
+dfTypeCast.write.mode("overwrite").saveAsTable(TARGET_TABLE)
+
+
+
