@@ -1,0 +1,114 @@
+import datetime
+from pyspark.sql import functions as F, Row
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType, DoubleType, LongType, IntegerType
+
+GRADIENT_LIMIT = 5
+
+BOUNDS = {
+    "height":    {"min": 0.5,  "max": 15, "limit": 10},
+    "direction": {"min": 0.01, "max": 360, "limit": 360},
+    "period":    {"min": 5,    "max": 10, "limit": 10},
+
+}
+
+WAVE_DATA_SILVER_TABLE = "silver_layer_cleaning_data_engine.silver_layer_database.tb_wave_data"
+BEACH_TABLE            = "silver_layer_cleaning_data_engine.silver_layer_database.tb_beaches"
+TARGET_TABLE           = "gold_layer_data_engine.gold_layer_database.tb_wave_data"
+
+def spike_test(value, prev1, prev2, min_val, max_val):
+
+    if prev1 is None:
+        return 1
+    if prev2 is None:
+        avg = (value + prev1) / 2
+    else:
+        avg = (value + prev1 + prev2) / 3
+    spike_ref = prev1 - avg
+    if spike_ref > max_val:
+        return 0
+    return 1
+
+def dominio_test(value, min_val, max_val):
+    if value < min_val or value > max_val:
+        return 0
+    return 1
+
+def gradiente_test(value, prev1, limit):
+    if prev1 is None:
+        return 1
+    if abs(value - prev1) > limit:  
+        return 0
+    return 1
+
+def wave_quality_test(value, prev1, prev2, metric_type):
+    mn = BOUNDS[metric_type]["min"]
+    mx = BOUNDS[metric_type]["max"]
+    limit = BOUNDS[metric_type]["limit"]
+    return (
+        spike_test(value, prev1, prev2, mn, mx)
+        * dominio_test(value, mn, mx)
+        * gradiente_test(value, prev1, limit)
+    )
+
+df_wave = (
+    spark.table(WAVE_DATA_SILVER_TABLE)
+
+    .orderBy("Beach_ID", "Forecast_Date")
+)
+
+beach_ids = [r["beach_id"] for r in spark.table(BEACH_TABLE).select("beach_id").collect()]
+
+schema = StructType([
+    StructField("Beach_ID",       LongType(),    True),
+    StructField("Forecast_Date",  TimestampType(), True),
+    StructField("Wave_Height",    DoubleType(),    True),
+    StructField("Wave_Direction", DoubleType(),    True),
+    StructField("Wave_Period",    DoubleType(),    True),
+    StructField("Aproved",        IntegerType(),      True),
+])
+
+all_results = []
+
+for beach_id in beach_ids:
+    rows = (
+        df_wave
+        .filter(F.col("Beach_ID") == beach_id)
+        .orderBy("Forecast_Date")
+        .collect()
+    )
+    approved_history = {
+        "height":    [], 
+        "direction": [],
+        "period":    [],
+    }
+
+    for row in rows:
+        h  = row["Wave_Height"]
+        d  = row["Wave_Direction"]
+        p  = row["Wave_Period"]
+        dt = row["Forecast_Date"]
+
+        def get_prev(metric, idx):
+            """Retorna o idx-ésimo valor aprovado anterior (0=mais recente), ou None."""
+            hist = approved_history[metric]
+            return hist[idx] if len(hist) > idx else None
+
+        approved = (
+            wave_quality_test(h, get_prev("height",    0), get_prev("height",    1), "height")
+            * wave_quality_test(d, get_prev("direction", 0), get_prev("direction", 1), "direction")
+            * wave_quality_test(p, get_prev("period",   0), get_prev("period",   1), "period")
+        )
+
+        all_results.append((beach_id, dt, h, d, p, int(approved)))
+
+        if approved == 1:
+            for metric, val in [("height", h), ("direction", d), ("period", p)]:
+                approved_history[metric].insert(0, val)
+                approved_history[metric] = approved_history[metric][:2]  # mantém só 2
+
+
+df_result = spark.createDataFrame(all_results, schema=schema)
+
+df_result.write.mode("overwrite").saveAsTable(TARGET_TABLE)
+
+df_result.show()
