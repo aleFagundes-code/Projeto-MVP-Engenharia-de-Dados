@@ -1,0 +1,68 @@
+%sql
+CREATE OR REPLACE TABLE bronze_layer_reading_data_engine.bronze_layer_database.locations AS
+WITH raw AS (
+  SELECT 
+    value,
+    _metadata.file_name AS source_file,
+    monotonically_increasing_id() AS row_id
+  FROM read_files(
+    '/Volumes/bronze_layer_reading_data_engine/bronze_layer_database/raw_files_folder/',
+    format => 'text'
+  )
+),
+blank_lines AS (
+  SELECT source_file, row_id AS blank_row_id
+  FROM raw WHERE value = ''
+),
+locations_raw AS (
+  SELECT r.value, r.source_file
+  FROM raw r
+  JOIN blank_lines b ON r.source_file = b.source_file
+  WHERE r.row_id < b.blank_row_id
+    AND r.value != ''
+    AND r.value NOT LIKE 'location_id,latitude%'
+)
+SELECT
+  CAST(split(value, ',')[0] AS INT)    AS location_id,
+  CAST(split(value, ',')[1] AS DOUBLE) AS latitude,
+  CAST(split(value, ',')[2] AS DOUBLE) AS longitude,
+  CAST(split(value, ',')[3] AS DOUBLE) AS elevation_m,
+  CAST(split(value, ',')[4] AS INT)    AS utc_offset_seconds,
+  split(value, ',')[5]                 AS timezone,
+  split(value, ',')[6]                 AS timezone_abbreviation,
+  source_file
+FROM locations_raw;
+
+%sql
+CREATE OR REPLACE TABLE bronze_layer_reading_data_engine.bronze_layer_database.wave_data AS
+WITH raw AS (
+  SELECT 
+    value,
+    _metadata.file_name AS source_file,
+    monotonically_increasing_id() AS row_id
+  FROM read_files(
+    '/Volumes/bronze_layer_reading_data_engine/bronze_layer_database/raw_files_folder/',
+    format => 'text'
+  )
+),
+blank_lines AS (
+  SELECT source_file, row_id AS blank_row_id
+  FROM raw WHERE value = ''
+),
+wave_raw AS (
+  SELECT r.value, r.source_file
+  FROM raw r
+  JOIN blank_lines b ON r.source_file = b.source_file
+  WHERE r.row_id > b.blank_row_id
+    AND r.value != ''
+    AND r.value NOT LIKE 'location_id,time%'
+)
+SELECT
+  CAST(split(value, ',')[0] AS INT)       AS location_id,
+  CAST(split(value, ',')[1] AS TIMESTAMP) AS time,
+  CAST(split(value, ',')[2] AS DOUBLE)    AS wave_height_m,
+  CAST(split(value, ',')[3] AS INT)       AS wave_direction_deg,
+  CAST(split(value, ',')[4] AS DOUBLE)    AS wave_period_s,
+  split(value, ',')[5]                    AS wave_peak_period,
+  source_file
+FROM wave_raw;
