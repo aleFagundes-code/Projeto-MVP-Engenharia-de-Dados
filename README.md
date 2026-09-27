@@ -1,7 +1,8 @@
 # Projeto-MVP-Engenharia-de-Dados
 Projeto MVP da Matéria de Engenharia de Dados.
 
-1 - Contexto de Negócio e Perguntas: 
+<h1>1 - Contexto de Negócio e Perguntas: </h1>
+
 Para esse projeto levei em consideração uma situação que vivencio durante períodos festivos: Uma prima minha tem um deficiência no coração e para ir a praia e entrar no mar, precisa ser em momento que o mar está calmo. Então decidi encontrar por meio de dados de previsão oceanográficos, qual praias em minha região teriam a menor a quantidade/altura de ondas. Também quais praias tem a menor taxa de turistas em certos períodos. 
 Seguindo então a Escala Douglas como regra de negócio (PDF "Escala_Douglas" no repositório)
 Os dados brutos, coletos de API gratuitas, trazem:
@@ -13,10 +14,11 @@ Data da Previsão: Data para qual a previsão foi feita.
 Latidude e Longitude: Latidude e Longitude da praia.
 
 
-2 - Carga dos Dados:
+<h1>2 - Carga dos Dados:</h1>
+
 Os arquivos brutos, coletados em formato .csv (Disponíveis no Repositório), criado o script "ReadingDataFromVolumeToTable", disponível no repositório, para fazer a leitura dos arquivos e separa-los em duas tabelas: Tb_locations e tb_wave_raw_data.
 
-3 - Modelagem e Catálogos de Dados:
+<h1> 3 - Modelagem e Catálogos de Dados: </h1>  
 
 Foi criados três catálogos: Bronze, Silver e Gold
 
@@ -48,7 +50,7 @@ tb_wave_data_scaled: Tabela contendo os dados coletados e categorizados pela Esc
 tb_lower_avg_wave_height: Tabela contendo a praia que possui a menor média de onda para um dia específico. 
 
 
-4 - Pipeline de Dados:
+<h1> 4 - Pipeline de Dados: </h1>
 
 A organização da ETL seguiu o padrão Bronze, Silve e Gold. A principio usei notebooks separados para executar cada passo:
 
@@ -81,7 +83,7 @@ Pipeline_Wave_Data_NB: Junção dos 4 notebooks, cada um dos notebooks possui se
 
 Todos os scripts citados nesse item, estão disponíveis no repositório. 
 
-5 - Qualidade de Dados:
+<h1> 5 - Qualidade de Dados: </h1>
 
 Por se tratar de uma série temporal de dados coletados, foi aplicado testes de Domínio, Spike e Gradiente sobre os dados, para esses testes os valores limites de cada parâmetro foram coletados na internet (pesquisa rápida no google). Seguindos tais regras:
 
@@ -91,11 +93,11 @@ Gradiente: Verifica se a diferença entre o dado atual e o último dado aprovado
 
 Regras aplicadas no script: Wave_Data_QUALITY_TEST
 
-6 - Análise de Dados: 
+<h1> 6 - Análise de Dados: </h1>
 
 Com os dados coletados é possível verificar, de forma bruta e não precisa, quais praias estão com previsão de estarem com o mar mais calmo e os possíveis dias. Infelizmente, devido a extensão das variáveis que impactam as condições do mar, não é possível determinar com certeza o estado no mar na praia, porém com os dados obtidos já se pode ter uma estimativa. Devido a isso, também não foi possível coletar dados para responder a segunda pergunta. 
 
-7 - Autoavaliação:
+<h1> 7 - Autoavaliação: </h1>  
 
 Para fim do projeto, não consegui atingir todos meus objetivos completamente, trabalho com coleta e processamento de dados oceanógrafos, porém sou desenvolvedor. Acreditei que seria capaz de fazer a coleta e analise precisa dos dados de onda para chegar a conclusão que queria e ainda teria como coletar dados sobre a movimentação nas praias, porém não foi possível, a principio tentei determinar o estado mar usando outros parâmetro (swell), porém não consegui avançar, só consegui chegar na utilização da Escala Douglas, por explicação de uma colega Oceanógrafa sobre como é feito esse tipo de análise. 
 
